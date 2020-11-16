@@ -39,6 +39,7 @@
 #' @param assay.type An integer or string specifying the assay to use from a SummarizedExperiment \code{x}.
 #' @param use.dimred An integer or string specifying the reduced dimensions to use from a SingleCellExperiment \code{x}.
 #' @param use.median A logical scalar indicating whether cluster centroid coordinates should be computed using the median rather than mean.
+#' @param dist.method A string specifying the distance measure to be used. Must be one of \code{"euclidean"}, \code{"scaled_full"}, \code{"scaled_diag"}, or \code{"slingshot"}, or any unambiguous substring of these. See Details. 
 #' @param with.mnn A logical scalar indicating whether to use distances computed from mutual nearest neighbor pairs, see Details.
 #' @param mnn.k An integer scalar specifying the number of nearest neighbors to consider for the MNN-based distance calculation. 
 #' See \code{\link[batchelor]{findMutualNN}} for more details.
@@ -73,6 +74,13 @@
 #'
 #' The normalized gain is reported as the \code{"gain"} attribute in the edges of the MST from \code{\link{createClusterMST}}.
 #' Note that the \code{"weight"} attribute represents the edge length.
+#'
+#' @section Distance measures:
+#' Distances between cluster centroids may be calculated in multiple ways. The default is \code{"euclidean"}.
+#' The \code{"scaled_full"} and \code{"scaled_diag"} options both take cluster shape into account, scaling the distance between centroids 
+#' by the sum of the covariance matrices of the two clusters (using either the full covariance matrix or just the diagonal).
+#' The \code{"slingshot"} option will typically be equivalent to the \code{"scaled_full"} option, 
+#' but switches to \code{"scaled_diag"} in the presence of small clusters (fewer cells than dimensions in the reduced dimensional space). 
 #'
 #' @section Alternative distances with MNN pairs:
 #' While distances between centroids are usually satisfactory for gauging cluster \dQuote{closeness}, 
@@ -141,7 +149,7 @@ NULL
 
 #' @importFrom igraph graph.adjacency minimum.spanning.tree delete_vertices E V V<-
 #' @importFrom stats median dist
-.create_cluster_mst <- function(x, clusters, use.median=FALSE, outgroup=FALSE, outscale=3, columns=NULL, with.mnn=FALSE, mnn.k=50, BNPARAM=NULL, BPPARAM=NULL) {
+.create_cluster_mst <- function(x, clusters, use.median=FALSE, outgroup=FALSE, outscale=3, columns=NULL, dist.method = c("euclidean", "scaled_full", "scaled_diag", "slingshot"), with.mnn=FALSE, mnn.k=50, BNPARAM=NULL, BPPARAM=NULL) {
     if (!is.null(columns)) {
         x <- x[,columns,drop=FALSE]                
     }
@@ -156,8 +164,29 @@ NULL
     }
 
     if (!with.mnn) {
-        dmat <- dist(centers)
-        dmat <- as.matrix(dmat)
+        dist.method <- match.arg(dist.method)
+        if (dist.method == "euclidean") {
+            dmat <- dist(centers)
+            dmat <- as.matrix(dmat)
+        } else {
+            if (is.null(clusters)) {
+                stop("'clusters' must be specified when 'dist.method' is not 'euclidean'")
+            }
+        }
+        if (dist.method == "scaled_full") {
+            dmat <- .dist_clusters_full(x, clusters, centers)
+        }
+        if (dist.method == "scaled_diag") {
+            dmat <- .dist_clusters_diag(x, clusters, centers)
+        }
+        if (dist.method == "slingshot") {
+            min.clus.size <- min(table(clusters))
+            if(min.clus.size <= ncol(x)){
+                dmat <- .dist_clusters_full(x, clusters, centers)
+            }else{
+                dmat <- .dist_clusters_diag(x, clusters, centers)
+            }
+        }
     } else {
         if (is.null(clusters)) {
             stop("'clusters' must be specified when 'with.mnn=TRUE'")
@@ -252,6 +281,33 @@ NULL
     mst
 }
 
+.dist_clusters_full <- function(x, clusters, centers){
+    clusnames <- rownames(centers)
+    vapply(clusnames, function(clus1){
+        mu1 <- centers[clus1, ]
+        s1 <- cov(x[which(clusters==clus1), ,drop = FALSE])
+        vapply(clusnames, function(clus2){
+            mu2 <- centers[clus2, ]
+            s2 <- cov(x[which(clusters==clus2), ,drop=FALSE])
+            diff <- mu1 - mu2
+            return(as.numeric(t(diff) %*% solve(s1 + s2) %*% diff))
+        }, 0.0)
+    }, rep(0.0, length(clusnames)))
+}
+
+.dist_clusters_diag <- function(x, clusters, centers){
+    clusnames <- rownames(centers)
+    vapply(clusnames, function(clus1){
+        mu1 <- centers[clus1, ]
+        s1 <- diag(diag(cov(x[which(clusters==clus1), ,drop = FALSE])))
+        vapply(clusnames, function(clus2){
+            mu2 <- centers[clus2, ]
+            s2 <- diag(diag(cov(x[which(clusters==clus2), ,drop=FALSE])))
+            diff <- mu1 - mu2
+            return(as.numeric(t(diff) %*% solve(s1 + s2) %*% diff))
+        }, 0.0)
+    }, rep(0.0, length(clusnames)))
+}
 #################################################
 
 #' @export

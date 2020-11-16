@@ -16,6 +16,7 @@ createClusterMST(x, ...)
   outgroup = FALSE,
   outscale = 3,
   columns = NULL,
+  dist.method = c("euclidean", "scaled_full", "scaled_diag", "slingshot"),
   with.mnn = FALSE,
   mnn.k = 50,
   BNPARAM = NULL,
@@ -70,6 +71,8 @@ Only used if \code{outgroup=TRUE}.}
 
 \item{columns}{A character, logical or integer vector specifying the columns of \code{x} to use.
 If \code{NULL}, all provided columns are used by default.}
+
+\item{dist.method}{A string specifying the distance measure to be used. Must be one of \code{"euclidean"}, \code{"scaled_full"}, \code{"scaled_diag"}, or \code{"slingshot"}, or any unambiguous substring of these. See Details.}
 
 \item{with.mnn}{A logical scalar indicating whether to use distances computed from mutual nearest neighbor pairs, see Details.}
 
@@ -126,6 +129,15 @@ requires an alternative path that increases the distance travelled by that edge'
 
 The normalized gain is reported as the \code{"gain"} attribute in the edges of the MST from \code{\link{createClusterMST}}.
 Note that the \code{"weight"} attribute represents the edge length.
+}
+
+\section{Distance measures}{
+
+Distances between cluster centroids may be calculated in multiple ways. The default is \code{"euclidean"}.
+The \code{"scaled_full"} and \code{"scaled_diag"} options both take cluster shape into account, scaling the distance between centroids 
+by the sum of the covariance matrices of the two clusters (using either the full covariance matrix or just the diagonal).
+The \code{"slingshot"} option will typically be equivalent to the \code{"scaled_full"} option, 
+but switches to \code{"scaled_diag"} in the presence of small clusters (fewer cells than dimensions in the reduced dimensional space).
 }
 
 \section{Alternative distances with MNN pairs}{
