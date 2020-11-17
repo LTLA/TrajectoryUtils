@@ -16,7 +16,7 @@ createClusterMST(x, ...)
   outgroup = FALSE,
   outscale = 3,
   columns = NULL,
-  dist.method = c("euclidean", "scaled_full", "scaled_diag", "slingshot"),
+  dist.method = c("simple", "scaled.full", "scaled.diag", "slingshot", "mnn"),
   with.mnn = FALSE,
   mnn.k = 50,
   BNPARAM = NULL,
@@ -72,17 +72,17 @@ Only used if \code{outgroup=TRUE}.}
 \item{columns}{A character, logical or integer vector specifying the columns of \code{x} to use.
 If \code{NULL}, all provided columns are used by default.}
 
-\item{dist.method}{A string specifying the distance measure to be used. Must be one of \code{"euclidean"}, \code{"scaled_full"}, \code{"scaled_diag"}, or \code{"slingshot"}, or any unambiguous substring of these. See Details.}
+\item{dist.method}{A string specifying the distance measure to be used, see Details.}
 
-\item{with.mnn}{A logical scalar indicating whether to use distances computed from mutual nearest neighbor pairs, see Details.}
+\item{with.mnn}{Logical scalar, deprecated; use \code{dist.method="mnn"} instead.}
 
-\item{mnn.k}{An integer scalar specifying the number of nearest neighbors to consider for the MNN-based distance calculation. 
+\item{mnn.k}{An integer scalar specifying the number of nearest neighbors to consider for the MNN-based distance calculation when \code{dist.method="mnn"}.
 See \code{\link[batchelor]{findMutualNN}} for more details.}
 
-\item{BNPARAM}{A BiocNeighborParam object specifying how the nearest-neighbor search should be performed when \code{with.mnn=TRUE},
+\item{BNPARAM}{A BiocNeighborParam object specifying how the nearest-neighbor search should be performed when \code{dist.method="mnn"},
 see the \pkg{BiocNeighbors} package for more details.}
 
-\item{BPPARAM}{A BiocParallelParam object specifying whether the nearest neighbor search should be parallelized when \code{with.mnn=TRUE},
+\item{BPPARAM}{A BiocParallelParam object specifying whether the nearest neighbor search should be parallelized when \code{dist.method="mnn"},
 see the \pkg{BiocNeighbors} package for more details.}
 
 \item{assay.type}{An integer or string specifying the assay to use from a SummarizedExperiment \code{x}.}
@@ -133,11 +133,17 @@ Note that the \code{"weight"} attribute represents the edge length.
 
 \section{Distance measures}{
 
-Distances between cluster centroids may be calculated in multiple ways. The default is \code{"euclidean"}.
-The \code{"scaled_full"} and \code{"scaled_diag"} options both take cluster shape into account, scaling the distance between centroids 
-by the sum of the covariance matrices of the two clusters (using either the full covariance matrix or just the diagonal).
-The \code{"slingshot"} option will typically be equivalent to the \code{"scaled_full"} option, 
-but switches to \code{"scaled_diag"} in the presence of small clusters (fewer cells than dimensions in the reduced dimensional space).
+Distances between cluster centroids may be calculated in multiple ways:
+\itemize{
+\item The default is \code{"simple"}, which computes the Euclidean distance between cluster centroids.
+\item With \code{"scaled.diag"}, we downscale the distance between the centroids by the sum of the variances of the two corresponding clusters (i.e., the diagonal of the covariance matrix).
+This accounts for the cluster \dQuote{width} by reducing the effective distances between broad clusters.
+\item With \code{"scaled.full"}, we repeat this scaling with the full covariance matrix.
+This accounts for the cluster shape by considering correlations between dimensions, but cannot be computed when there are more cells than dimensions.
+\item The \code{"slingshot"} option will typically be equivalent to the \code{"scaled.full"} option, 
+but switches to \code{"scaled.diag"} in the presence of small clusters (fewer cells than dimensions in the reduced dimensional space). 
+\item For \code{"mnn"}, see the more detailed explanation below.
+}
 }
 
 \section{Alternative distances with MNN pairs}{
@@ -154,7 +160,7 @@ For each pair of clusters, we identify all MNN pairs and compute the median dist
 This distance is then used in place of the distance between centroids to construct the MST.
 In this manner, we focus on cluster pairs that are close at their boundaries rather than at their centers.
 
-This mode can be enabled by setting \code{with.mnn=TRUE}, while the stringency of the MNN definition can be set with \code{mnn.k}.
+This mode can be enabled by setting \code{method="mnn"}, while the stringency of the MNN definition can be set with \code{mnn.k}.
 Similarly, the performance of the nearest neighbor search can be controlled with \code{BPPARAM} and \code{BSPARAM}.
 Note that this mode performs a cell-based search and so cannot be used when \code{x} already contains aggregated profiles.
 }
