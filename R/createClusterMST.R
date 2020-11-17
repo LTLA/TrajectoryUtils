@@ -101,7 +101,7 @@
 #' This distance is then used in place of the distance between centroids to construct the MST.
 #' In this manner, we focus on cluster pairs that are close at their boundaries rather than at their centers.
 #'
-#' This mode can be enabled by setting \code{method="mnn"}, while the stringency of the MNN definition can be set with \code{mnn.k}.
+#' This mode can be enabled by setting \code{dist.method="mnn"}, while the stringency of the MNN definition can be set with \code{mnn.k}.
 #' Similarly, the performance of the nearest neighbor search can be controlled with \code{BPPARAM} and \code{BSPARAM}.
 #' Note that this mode performs a cell-based search and so cannot be used when \code{x} already contains aggregated profiles.
 #'
