@@ -134,7 +134,7 @@ test_that("MST construction works with endpoint specification", {
     y <- rbind(A=c(0, 1), B=c(0, 2), C=c(0, 3), D=c(0, 4)) 
     out <- createClusterMST(y, endpoint="B", clusters=NULL)
     expect_true(igraph::degree(out, "B")==1L)
-    expect_true(is.infinite(igraph::E(out)$gain[1]))
+    expect_identical(igraph::E(out)$gain[3], 0)
     expect_identical(igraph::components(out)$no, 1L)
 
     out <- createClusterMST(y, endpoint=c("C", "D"), clusters=NULL)
