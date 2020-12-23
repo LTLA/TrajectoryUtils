@@ -4,7 +4,7 @@
 \alias{mst.with.endpoints}
 \title{Create a minimum spanning tree with known endpoints}
 \usage{
-mst.with.endpoints(dmat, endpoints, allow.dyads = FALSE, error = TRUE)
+mst.with.endpoints(dmat, endpoints, outgroup.name = NULL, error = TRUE)
 }
 \arguments{
 \item{dmat}{A symmetric adjacency matrix where each row/column is a node.
@@ -14,12 +14,12 @@ This should have non-\code{NULL} dimnames.}
 
 \item{endpoints}{A character vector specifying the nodes to be set as endpoints.}
 
-\item{allow.dyads}{Logical scalar indicating whether dyads (i.e., two-node subcomponents between endpoints) are allowed.}
+\item{outgroup.name}{String specifying the name of the node to use as the outgroup.}
 
 \item{error}{Logical scalar indicating whether an error should be raised if no tree satisfies the constraints.}
 }
 \value{
-A \link{graph} object containing the minimum spanning tree (or forest, if \code{allow.dyads=TRUE}).
+A \link{graph} object containing the minimum spanning tree (or possibly forest, if \code{dyad.penalty} is finite).
 This may also be \code{NULL} if \code{error=FALSE} and no tree can be found that satisfies the constraints.
 }
 \description{
@@ -30,13 +30,13 @@ Pretty much as the name suggests, this function will search for the minimum span
 For most part, this involves removing the endpoints, identifying the MST from the remaining non-endpoint nodes,
 and then connecting the endpoints to the closest non-endpoint node to create the full MST.
 
-However, if \code{allow.dyads=TRUE}, it is also possible to form edges between two endpoints.
-These will form their own subcomponent of the graph, named here as a \dQuote{dyad}.
-The function will perform an exhaustive search for the optimal configuration of edges from endpoints if dyads are allowed.
+If \code{outgroup.name} is supplied, each endpoint is allowed to connect to the outgroup node in addition to one other node.
+This makes it possible to form an edge between two endpoints, named here as a \dQuote{dyad}.
+The idea is that, once the outgroup is removed (see \code{?\link{createClusterMST}}), the connected endpoints form their own subcomponent.
 
-Note that there are actually two edges connecting the endpoints in a dyad;
-both are counted when computing the MST and both are reported in the output graph.
-This avoids the loss of an edge, which would otherwise result in a large drop in the distance and encourage formation of inappropriate dyads.
+The function will perform an exhaustive search for the optimal configuration of edges from endpoints if dyads are allowed.
+The edge width between the endpoint and the outgroup represents the effective penalty for formation of a dyad.
+Otherwise, the dyad would eliminate an edge, causing a large drop in the total tree distance and encouraging formation of dyads everywhere.
 
 In some situations, it is impossible to construct a tree, e.g., for an odd number of nodes that are all endpoints.
 This will result in an error being raised.
@@ -54,10 +54,10 @@ mst.with.endpoints(dmat, endpoints=c("A", "B"))
 try(mst.with.endpoints(dmat, endpoints=c("A", "B", "C")))
 
 # Sometimes MSTs are only possible when dyads are allowed to form.
-coords <- rbind(A=c(0,0), B=c(1,-1), C=c(1, 1), D=c(-1, 0))
-dmat <- as.matrix(dist(coords))
-try(mst.with.endpoints(dmat, endpoints=c("A", "B", "C", "D")))
-mst.with.endpoints(dmat, endpoints=c("A", "B", "C", "D"), allow.dyads=TRUE)
+# This requires us to pass in a dummy node as an outgroup.
+dmat2 <- cbind(dummy=10, rbind(dummy=10, dmat))
+dmat2[1,1] <- 0
+mst.with.endpoints(dmat2, endpoints=c("A", "B", "C"), outgroup.name="dummy")
 
 }
 \seealso{

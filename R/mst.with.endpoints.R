@@ -7,11 +7,11 @@
 #' however, no edge is formed when the weight is zero.
 #' This should have non-\code{NULL} dimnames.
 #' @param endpoints A character vector specifying the nodes to be set as endpoints.
-#' @param allow.dyads Logical scalar indicating whether dyads (i.e., two-node subcomponents between endpoints) are allowed.
+#' @param outgroup.name String specifying the name of the node to use as the outgroup.
 #' @param error Logical scalar indicating whether an error should be raised if no tree satisfies the constraints.
 #'
 #' @return
-#' A \link{graph} object containing the minimum spanning tree (or forest, if \code{allow.dyads=TRUE}).
+#' A \link{graph} object containing the minimum spanning tree (or possibly forest, if \code{dyad.penalty} is finite).
 #' This may also be \code{NULL} if \code{error=FALSE} and no tree can be found that satisfies the constraints.
 #'
 #' @details
@@ -19,13 +19,13 @@
 #' For most part, this involves removing the endpoints, identifying the MST from the remaining non-endpoint nodes,
 #' and then connecting the endpoints to the closest non-endpoint node to create the full MST.
 #'
-#' However, if \code{allow.dyads=TRUE}, it is also possible to form edges between two endpoints.
-#' These will form their own subcomponent of the graph, named here as a \dQuote{dyad}.
-#' The function will perform an exhaustive search for the optimal configuration of edges from endpoints if dyads are allowed.
+#' If \code{outgroup.name} is supplied, each endpoint is allowed to connect to the outgroup node in addition to one other node.
+#' This makes it possible to form an edge between two endpoints, named here as a \dQuote{dyad}.
+#' The idea is that, once the outgroup is removed (see \code{?\link{createClusterMST}}), the connected endpoints form their own subcomponent.
 #'
-#' Note that there are actually two edges connecting the endpoints in a dyad;
-#' both are counted when computing the MST and both are reported in the output graph.
-#' This avoids the loss of an edge, which would otherwise result in a large drop in the distance and encourage formation of inappropriate dyads.
+#' The function will perform an exhaustive search for the optimal configuration of edges from endpoints if dyads are allowed.
+#' The edge width between the endpoint and the outgroup represents the effective penalty for formation of a dyad.
+#' Otherwise, the dyad would eliminate an edge, causing a large drop in the total tree distance and encouraging formation of dyads everywhere.
 #' 
 #' In some situations, it is impossible to construct a tree, e.g., for an odd number of nodes that are all endpoints.
 #' This will result in an error being raised.
@@ -45,10 +45,10 @@
 #' try(mst.with.endpoints(dmat, endpoints=c("A", "B", "C")))
 #'
 #' # Sometimes MSTs are only possible when dyads are allowed to form.
-#' coords <- rbind(A=c(0,0), B=c(1,-1), C=c(1, 1), D=c(-1, 0))
-#' dmat <- as.matrix(dist(coords))
-#' try(mst.with.endpoints(dmat, endpoints=c("A", "B", "C", "D")))
-#' mst.with.endpoints(dmat, endpoints=c("A", "B", "C", "D"), allow.dyads=TRUE)
+#' # This requires us to pass in a dummy node as an outgroup.
+#' dmat2 <- cbind(dummy=10, rbind(dummy=10, dmat))
+#' dmat2[1,1] <- 0
+#' mst.with.endpoints(dmat2, endpoints=c("A", "B", "C"), outgroup.name="dummy")
 #' 
 #' @seealso
 #' \code{\link{minimum.spanning.tree}}, for the version of this function \emph{sans} the endpoint considerations.
@@ -58,16 +58,16 @@
 #' @export
 #' @importFrom igraph minimum.spanning.tree add_edges graph.adjacency E
 #' @importFrom S4Vectors head
-mst.with.endpoints <- function(dmat, endpoints, allow.dyads=FALSE, error=TRUE) {
+mst.with.endpoints <- function(dmat, endpoints, outgroup.name=NULL, error=TRUE) {
+    stopifnot(all(diag(dmat)==0))
     if (length(endpoints)==0) {
         g <- graph.adjacency(dmat, mode = "undirected", weighted = TRUE)
         return(minimum.spanning.tree(g))
-    } 
+    }
 
     endpoints <- as.character(unique(endpoints))
-
-    if (nrow(dmat)==2) { # not much choice in this case.
-        allow.dyads <- TRUE
+    if (nrow(dmat)==2L && all(rownames(dmat) %in% endpoints)) {
+        return(graph.adjacency(dmat, mode = "undirected", weighted = TRUE))
     }
 
     # Removing the endpoints before searching for an MST.
@@ -78,9 +78,10 @@ mst.with.endpoints <- function(dmat, endpoints, allow.dyads=FALSE, error=TRUE) {
     mst0 <- minimum.spanning.tree(g0)
 
     # Connecting the endpoints to the closest non-endpoint. Placeholder dist
-    # is 'Inf' so that the init.weight=Inf for the dyad search.
+    # is 'Inf' so that we get init.weight=Inf for the dyad search.
     chosen.node <- rep(NA_character_, length(endpoints))
     chosen.dist <- rep(Inf, length(endpoints))
+    allow.dyads <- !is.null(outgroup.name)
 
     for (i in seq_along(endpoints)) {
         endpt <- endpoints[i]
@@ -108,7 +109,8 @@ mst.with.endpoints <- function(dmat, endpoints, allow.dyads=FALSE, error=TRUE) {
             init.path=chosen.node, 
             init.weight=sum(E(mst0)$weight) + sum(chosen.dist),
             dmat=dmat, 
-            endpoints=endpoints
+            endpoints=endpoints,
+            outgroup.name=outgroup.name
         )
 
         if (is.null(dyad.out)) {
@@ -126,7 +128,7 @@ mst.with.endpoints <- function(dmat, endpoints, allow.dyads=FALSE, error=TRUE) {
     add_edges(mst0, rbind(endpoints, chosen.node), attr=list(weight=chosen.dist))
 }
 
-.explore_dyad_solutions <- function(init.path, init.weight, dmat, endpoints) {
+.explore_dyad_solutions <- function(init.path, init.weight, dmat, endpoints, outgroup.name) {
     best.stats <- new.env()
     best.stats$path <- init.path
     best.stats$distance <- init.weight
@@ -150,11 +152,10 @@ mst.with.endpoints <- function(dmat, endpoints, allow.dyads=FALSE, error=TRUE) {
         self.used <- which(path == current)
 
         if (length(self.used) == 1) { 
-            # Endpoint-to-endpoint dyads should be reciprocated.
-            # We still add the distance to avoid a low distance from the loss of an edge.
+            # For dyads, we add the distance to the specified outgroup.
             reciprocal <- rownames(available)[self.used]
             if (!reciprocal %in% path) {
-                SEARCH(c(path, reciprocal), distance + available[i,reciprocal])
+                SEARCH(c(path, outgroup.name), distance + available[i,outgroup.name])
             }
         } else {
             choices <- available[i,]
@@ -179,8 +180,7 @@ mst.with.endpoints <- function(dmat, endpoints, allow.dyads=FALSE, error=TRUE) {
         return(NULL)
     }
 
-    # Dyad edges are added twice; this is a feature, not a bug!
-    weight <- numeric(nrow(available))
+    weight <- rep(NA_real_, nrow(available))
     for (a in seq_along(weight)) {
         weight[a] <- available[a,best.stats$path[a]]
     }

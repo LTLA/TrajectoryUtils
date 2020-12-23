@@ -181,7 +181,7 @@ NULL
 
 #################################################
 
-#' @importFrom igraph graph.adjacency minimum.spanning.tree delete_vertices E V V<-
+#' @importFrom igraph graph.adjacency minimum.spanning.tree delete_vertices E V V<- 
 #' @importFrom stats median dist
 .create_cluster_mst <- function(x, clusters, use.median=FALSE, outgroup=FALSE, outscale=3, endpoints=NULL, columns=NULL,
     dist.method = c("simple", "scaled.full", "scaled.diag", "slingshot", "mnn"), 
@@ -231,14 +231,13 @@ NULL
     dmat[] <- pmax(dmat, lower.limit[1] / 1e6)
     diag(dmat) <- 0
 
-    # Only relevant if endpoints= is supplied; should we allow multi-component graphs
-    # by connecting two endpoints in a dyad? If outgroups=FALSE, the user would expect
-    # a single component group, so we disallow dyads as well.
-    allow.dyads <- !isFALSE(outgroup)
-
+    outgroup.name <- NULL
     if (!isFALSE(outgroup)) {
         if (!is.numeric(outgroup)) {
-            mst <- mst.with.endpoints(dmat, endpoints, allow.dyads=allow.dyads) 
+            mst <- mst.with.endpoints(dmat, endpoints, error=FALSE)
+            if (is.null(mst)) {
+                stop("could not determine automatic threshold for 'outgroup=TRUE'")
+            }
             med <- median(E(mst)$weight)
             outgroup <- med * outscale
         }
@@ -246,15 +245,15 @@ NULL
         old.d <- rownames(dmat)
         dmat <- rbind(cbind(dmat, outgroup), outgroup) 
         dmat[length(dmat)] <- 0
-        special.name <- strrep("x", max(nchar(old.d))+1L)
-        rownames(dmat) <- colnames(dmat) <- c(old.d, special.name)
+        outgroup.name <- strrep("x", max(nchar(old.d))+1L)
+        rownames(dmat) <- colnames(dmat) <- c(old.d, outgroup.name)
     }
 
-    mst <- mst.with.endpoints(dmat, endpoints, allow.dyads=allow.dyads) 
-    mst <- .estimate_edge_confidence(mst, dmat, endpoints=endpoints, allow.dyads=allow.dyads)
+    mst <- mst.with.endpoints(dmat, endpoints, outgroup.name=outgroup.name)
+    mst <- .estimate_edge_confidence(mst, dmat, endpoints=endpoints, outgroup.name=outgroup.name)
 
     if (!isFALSE(outgroup)) {
-        mst <- delete_vertices(mst, special.name)
+        mst <- delete_vertices(mst, outgroup.name)
     }
 
     # Embed vertex coordinates for downstream use.
@@ -264,11 +263,6 @@ NULL
         coord.list[[r]] <- centers[r,]
     }
     V(mst)$coordinates <- coord.list[names(V(mst))]
-
-    # Getting rid of double edges within dyads.
-    if (length(endpoints) && allow.dyads) {
-        mst <- simplify(mst)
-    }
 
     mst 
 }
@@ -326,9 +320,8 @@ NULL
     edges <- E(mst)
     ends <- ends(mst, edges)
 
+    reweight <- rep(Inf, length(edges))
     if (nrow(dmat) > 2) {
-        reweight <- rep(Inf, length(edges))
-
         for (i in seq_along(edges)) {
             cur.ends <- ends[i,]
 
@@ -342,8 +335,6 @@ NULL
                 reweight[i] <- sum(E(mst.copy)$weight)
             }
         }
-    } else {
-        reweight <- rep(NA_real_, nrow(ends))
     }
 
     W <- edges$weight
