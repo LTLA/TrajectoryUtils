@@ -238,7 +238,7 @@ NULL
 
     if (!isFALSE(outgroup)) {
         if (!is.numeric(outgroup)) {
-            mst <- .find_mst_with_endpoints(dmat, endpoints, allow.dyads=allow.dyads) 
+            mst <- mst.with.endpoints(dmat, endpoints, allow.dyads=allow.dyads) 
             med <- median(E(mst)$weight)
             outgroup <- med * outscale
         }
@@ -250,7 +250,7 @@ NULL
         rownames(dmat) <- colnames(dmat) <- c(old.d, special.name)
     }
 
-    mst <- .find_mst_with_endpoints(dmat, endpoints, allow.dyads=allow.dyads) 
+    mst <- mst.with.endpoints(dmat, endpoints, allow.dyads=allow.dyads) 
     mst <- .estimate_edge_confidence(mst, dmat, endpoints=endpoints, allow.dyads=allow.dyads)
 
     if (!isFALSE(outgroup)) {
@@ -321,90 +321,13 @@ NULL
     (distances + t(distances))
 }
 
-#' @importFrom igraph minimum.spanning.tree add_edges graph.adjacency
-#' @importFrom S4Vectors head
-.find_mst_with_endpoints <- function(dmat, endpoints, allow.dyads=FALSE) {
-    if (length(endpoints)==0) {
-        g <- graph.adjacency(dmat, mode = "undirected", weighted = TRUE)
-        return(minimum.spanning.tree(g))
-    } 
-
-    if (nrow(dmat)==2L) {
-        # Not much choice but to allow dyads.
-        allow.dyads <- TRUE
-    }
-    endpoints <- as.character(endpoints)
-
-    # Removing the endpoints before searching for an MST.
-    dmat0 <- dmat
-    dmat0[endpoints,] <- 0
-    dmat0[,endpoints] <- 0
-    g0 <- graph.adjacency(dmat0, mode = "undirected", weighted = TRUE)
-    mst0 <- minimum.spanning.tree(g0)
-
-    # Searching for the optimal configuration of endpoints.
-    available <- dmat[unique(endpoints),,drop=FALSE]
-    best.stats <- new.env()
-    best.stats$distance <- Inf
-
-    SEARCH <- function(path=character(0), distance=0) {
-        i <- length(path) + 1L
-        if (i > nrow(available)) {
-            if (distance < best.stats$distance) {
-                best.stats$distance <- distance
-                best.stats$path <- path
-            }
-            return(NULL)
-        } else if (distance > best.stats$distance) {
-            return(NULL)
-        } 
-        
-        current <- rownames(available)[i]
-        self.used <- which(path == current)
-
-        if (length(self.used) == 1) { 
-            # Endpoint-to-endpoint dyads should be reciprocated if they are allowed to exist.
-            # We still add the distance to avoid a low distance from the loss of an edge.
-            reciprocal <- rownames(available)[self.used]
-            if (!reciprocal %in% path && allow.dyads) {
-                SEARCH(c(path, reciprocal), distance + available[i,reciprocal])
-            }
-        } else {
-            choices <- available[i,]
-            choices <- choices[choices > 0]
-
-            used.endpoints <- c(
-                head(rownames(available), length(path)), # endpoints connected from in previous steps.
-                intersect(path, rownames(available)) # endpoints connected to in previous steps.
-            )
-
-            for (j in setdiff(names(choices), used.endpoints)) {
-                SEARCH(c(path, j), distance + choices[j])
-            }
-        }
-    }
-
-    SEARCH()
-    if (is.infinite(best.stats$distance)) {
-        stop("no solvable tree for specified 'endpoints'")
-    }
-
-    # Dyad edges are added twice; this is probably a feature.
-    weight <- numeric(nrow(available))
-    for (a in seq_along(weight)) {
-        weight[a] <- available[a,best.stats$path[a]]
-    }
-
-    add_edges(mst0, rbind(rownames(available), best.stats$path), attr=list(weight=weight))
-}
-
 #' @importFrom igraph minimum.spanning.tree E E<- ends
 .estimate_edge_confidence <- function(mst, dmat, ...) {
     edges <- E(mst)
     ends <- ends(mst, edges)
 
     if (nrow(dmat) > 2) {
-        reweight <- numeric(length(edges))
+        reweight <- rep(Inf, length(edges))
 
         for (i in seq_along(edges)) {
             cur.ends <- ends[i,]
@@ -413,9 +336,11 @@ NULL
             dmat.copy <- dmat
             dmat.copy[cur.ends[1],cur.ends[2]] <- 0
             dmat.copy[cur.ends[2],cur.ends[1]] <- 0
-            mst.copy <- .find_mst_with_endpoints(dmat.copy, ...)
+            mst.copy <- mst.with.endpoints(dmat.copy, ..., error=FALSE)
 
-            reweight[i] <- sum(E(mst.copy)$weight)
+            if (!is.null(mst.copy)) {
+                reweight[i] <- sum(E(mst.copy)$weight)
+            }
         }
     } else {
         reweight <- rep(NA_real_, nrow(ends))
