@@ -70,8 +70,7 @@ All weights should be positive and sum to 1 for each row.}
 \item{outgroup}{A logical scalar indicating whether an outgroup should be inserted to split unrelated trajectories.
 Alternatively, a numeric scalar specifying the distance threshold to use for this splitting.}
 
-\item{outscale}{A numeric scalar specifying the scaling to apply to the median distance between centroids
-to define the threshold for outgroup splitting.
+\item{outscale}{A numeric scalar specifying the number of MADs above the median, used to define the threshold for outgroup splitting - see Details.
 Only used if \code{outgroup=TRUE}.}
 
 \item{endpoints}{A character vector of clusters that must be endpoints, i.e., nodes of degree 1 or lower in the MST.}
@@ -129,9 +128,9 @@ Large jumps in the MST between real clusters that are more distant than \eqn{\om
 allowing us to break up the MST into multiple subcomponents (i.e., a minimum spanning forest) by removing the outgroup.
 
 The default \eqn{\omega} value is computed by constructing the MST from the original distance matrix,
-computing the median edge length in that MST, and then scaling it by \code{outscale}.
-This adapts to the magnitude of the distances and the internal structure of the dataset
-while also providing some margin for variation across cluster pairs.
+computing the median edge length in that MST, and then adding it to the MAD of the edge lengths multiplied by \code{outscale}.
+This effectively identifies branches with large \dQuote{outlier} distances and breaks them to form separate graph components.
+In this manner, we adapt to the magnitude of the distances and the internal structure of the dataset while still allowing for some variation in the distances. 
 Alternatively, \code{outgroup} can be set to a numeric scalar in which case it is used directly as \eqn{\omega}.
 }
 

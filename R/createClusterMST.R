@@ -37,8 +37,7 @@
 #' If \code{NULL}, all provided columns are used by default. 
 #' @param outgroup A logical scalar indicating whether an outgroup should be inserted to split unrelated trajectories.
 #' Alternatively, a numeric scalar specifying the distance threshold to use for this splitting.
-#' @param outscale A numeric scalar specifying the scaling to apply to the median distance between centroids
-#' to define the threshold for outgroup splitting.
+#' @param outscale A numeric scalar specifying the number of MADs above the median, used to define the threshold for outgroup splitting - see Details.
 #' Only used if \code{outgroup=TRUE}.
 #' @param endpoints A character vector of clusters that must be endpoints, i.e., nodes of degree 1 or lower in the MST.
 #' @param assay.type An integer or string specifying the assay to use from a SummarizedExperiment \code{x}.
@@ -72,9 +71,9 @@
 #' allowing us to break up the MST into multiple subcomponents (i.e., a minimum spanning forest) by removing the outgroup.
 #'
 #' The default \eqn{\omega} value is computed by constructing the MST from the original distance matrix,
-#' computing the median edge length in that MST, and then scaling it by \code{outscale}.
-#' This adapts to the magnitude of the distances and the internal structure of the dataset
-#' while also providing some margin for variation across cluster pairs.
+#' computing the median edge length in that MST, and then adding it to the MAD of the edge lengths multiplied by \code{outscale}.
+#' This effectively identifies branches with large \dQuote{outlier} distances and breaks them to form separate graph components.
+#' In this manner, we adapt to the magnitude of the distances and the internal structure of the dataset while still allowing for some variation in the distances. 
 #' Alternatively, \code{outgroup} can be set to a numeric scalar in which case it is used directly as \eqn{\omega}.
 #'
 #' @section Forcing endpoints:
@@ -242,8 +241,8 @@ NULL
         if (!is.numeric(outgroup)) {
             g <- graph.adjacency(dmat, mode = "undirected", weighted = TRUE)
             mst <- minimum.spanning.tree(g)
-            med <- median(E(mst)$weight)
-            outgroup <- med * outscale
+            mst.w <- E(mst)$weight
+            outgroup <- median(mst.w) + mad(mst.w) * outscale
         }
 
         old.d <- rownames(dmat)
